@@ -16,6 +16,9 @@ const bufferSize = 4096
 
 //File is used to get the checksum of the file
 func File(path string, h crypto.Hash) (*FileChecksum, error) {
+	if !h.Available() {
+		return nil, fmt.Errorf("Make sure the hashes binary is included in the imports")
+	}
 	hash := h.New()
 	if info, err := os.Stat(path); err != nil {
 		return nil, err
