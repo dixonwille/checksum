@@ -38,13 +38,6 @@ func main() {
 		srcs := cmd.StringsArg("SRC", nil, "File(s) or directory to get the checksum of")
 		cmd.Action = getCommand(output, hash, recursive, srcs)
 	})
-	app.Command("check", "Check the checksum of local files to a output file and return differing files", func(cmd *cli.Cmd) {
-		cmd.Spec = "[-r] CHECKSUMFILE [SRC...]"
-		recursive := cmd.BoolOpt("r recursive", false, "Compare the checksum of folders and files recursively")
-		checksum := cmd.StringArg("CHECKSUMFILE", "", "The checksum file to check your files against")
-		srcs := cmd.StringsArg("SRC", nil, "The files to check against the Checksum file")
-		cmd.Action = checkCommand(recursive, checksum, srcs)
-	})
 	app.Command("list", "List all the possable hashes to use", func(cmd *cli.Cmd) {
 		cmd.Spec = ""
 		cmd.Action = listCommand()
@@ -86,18 +79,6 @@ func getCommand(output, hash *string, recursive *bool, srcs *[]string) func() {
 			fmt.Println(err)
 			cli.Exit(1)
 		}
-	}
-}
-
-func checkCommand(recursive *bool, checksumFile *string, srcs *[]string) func() {
-	return func() {
-		tmpSrcs := append(*srcs, *checksumFile) //To make sure the checksumFile exists
-		err := validateSources(*recursive, tmpSrcs)
-		if err != nil {
-			fmt.Println(err)
-			cli.Exit(1)
-		}
-		fmt.Printf("Checking %v against %s [recursive: %v]\n", *srcs, *checksumFile, *recursive)
 	}
 }
 

@@ -23,7 +23,7 @@ func File(path string, h crypto.Hash) (*FileChecksum, error) {
 	if info, err := os.Stat(path); err != nil {
 		return nil, err
 	} else if info.IsDir() {
-		return nil, fmt.Errorf("Cannot get checksum of a directory. Please use the Directory function")
+		return nil, fmt.Errorf("Cannot get checksum of a directory. Please use the Directory function: %s", path)
 	}
 
 	file, err := os.Open(path)
@@ -62,11 +62,14 @@ func Directory(root string, h crypto.Hash) ([]*FileChecksum, error) {
 	}
 	padlock := new(sync.Mutex)
 	var folderSums []*FileChecksum
-	err := powerwalk.Walk(root, func(path string, info os.FileInfo, err error) error {
+	walkErr := powerwalk.Walk(root, func(path string, info os.FileInfo, intErr error) error {
+		if intErr != nil {
+			return intErr
+		}
 		if !info.IsDir() {
-			fileChecksum, err := File(path, h)
-			if err != nil {
-				return err
+			fileChecksum, fileErr := File(path, h)
+			if fileErr != nil {
+				return fileErr
 			}
 			padlock.Lock()
 			defer padlock.Unlock()
@@ -74,8 +77,8 @@ func Directory(root string, h crypto.Hash) ([]*FileChecksum, error) {
 		}
 		return nil
 	})
-	if err != nil {
-		return nil, err
+	if walkErr != nil {
+		return nil, walkErr
 	}
 	return folderSums, nil
 }
