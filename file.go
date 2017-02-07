@@ -14,21 +14,21 @@ import (
 
 const bufferSize = 4096
 
-//File is used to get the checksum of the file
+//File is used to get the checksum of the file.
 func File(path string, h crypto.Hash) (*FileChecksum, error) {
 	if !h.Available() {
-		return nil, fmt.Errorf("Make sure the hashes binary is included in the imports")
+		return nil, newError(path, ErrHashBinary, nil)
 	}
 	hash := h.New()
 	if info, err := os.Stat(path); err != nil {
-		return nil, err
+		return nil, newError(path, ErrCannotBeRead, err)
 	} else if info.IsDir() {
-		return nil, fmt.Errorf("Cannot get checksum of a directory. Please use the Directory function: %s", path)
+		return nil, newError(path, ErrFileIsDirectory, nil)
 	}
 
 	file, err := os.Open(path)
 	if err != nil {
-		return nil, err
+		return nil, newError(path, ErrFileNotOpen, err)
 	}
 	defer file.Close()
 	buf := make([]byte, bufferSize)
@@ -37,16 +37,16 @@ func File(path string, h crypto.Hash) (*FileChecksum, error) {
 		if n, err := fileReader.Read(buf); err == nil {
 			nw, err := hash.Write(buf[:n])
 			if err != nil {
-				return nil, err
+				return nil, newError(path, ErrWritingHash, err)
 			}
 			if nw != n {
 				fmt.Printf("ReadBits: %d\nWriteBits: %d\n", n, nw)
-				return nil, fmt.Errorf("Did not write all the bytes to the hash function")
+				return nil, newError(path, ErrImproperLength, nil)
 			}
 		} else if err == io.EOF {
 			break
 		} else {
-			return nil, err
+			return nil, newError(path, ErrFileReading, err)
 		}
 	}
 	return &FileChecksum{
@@ -55,21 +55,24 @@ func File(path string, h crypto.Hash) (*FileChecksum, error) {
 	}, nil
 }
 
-//Directory walks the given directory and returning the checksum of all the files in it
-func Directory(root string, h crypto.Hash) ([]*FileChecksum, error) {
+//Directory walks the given directory and returning the checksum of all the files in it.
+func Directory(root string, h crypto.Hash) ([]*FileChecksum, []error) {
 	if _, err := os.Stat(root); err != nil {
-		return nil, err
+		return nil, []error{newError(root, ErrCannotBeRead, err)}
 	}
 	padlock := new(sync.Mutex)
 	var folderSums []*FileChecksum
+	var allErrors []error
 	walkErr := powerwalk.Walk(root, func(path string, info os.FileInfo, intErr error) error {
 		if intErr != nil {
-			return intErr
+			allErrors = append(allErrors, newError(path, ErrWalking, intErr))
+			return nil
 		}
 		if !info.IsDir() {
 			fileChecksum, fileErr := File(path, h)
 			if fileErr != nil {
-				return fileErr
+				allErrors = append(allErrors, fileErr)
+				return nil
 			}
 			padlock.Lock()
 			defer padlock.Unlock()
@@ -78,7 +81,7 @@ func Directory(root string, h crypto.Hash) ([]*FileChecksum, error) {
 		return nil
 	})
 	if walkErr != nil {
-		return nil, walkErr
+		allErrors = append(allErrors, newError(root, ErrWalking, walkErr))
 	}
-	return folderSums, nil
+	return folderSums, allErrors
 }
