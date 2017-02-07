@@ -5,13 +5,13 @@ import (
 )
 
 type checksumResponse struct {
-	err       error
+	errs      []error
 	checksums []*checksum.FileChecksum
 }
 
-func newChecksumResponse(checksums []*checksum.FileChecksum, err error) checksumResponse {
+func newChecksumResponse(checksums []*checksum.FileChecksum, err ...error) checksumResponse {
 	return checksumResponse{
 		checksums: checksums,
-		err:       err,
+		errs:      err,
 	}
 }

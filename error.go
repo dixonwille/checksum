@@ -29,7 +29,7 @@ var (
 	ErrWalking = errors.New("There was a problem walking to this file/folder")
 )
 
-func newError(path string, err, inner error) *CSError {
+func NewError(path string, err, inner error) *CSError {
 	return &CSError{
 		Path:  path,
 		Err:   err,

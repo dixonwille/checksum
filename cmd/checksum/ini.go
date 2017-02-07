@@ -7,7 +7,7 @@ import (
 	"github.com/dixonwille/checksum"
 )
 
-func iniFormatChecksums(w *bufio.Writer, hash string, checksums []*checksum.FileChecksum) error {
+func iniFormatChecksums(w *bufio.Writer, hash string, checksums []*checksum.FileChecksum, errs []error) error {
 	defer w.Flush()
 	_, err := fmt.Fprintf(w, "[Config]\nhash=%s\n[Files]\n", hash)
 	if err != nil {
@@ -18,6 +18,15 @@ func iniFormatChecksums(w *bufio.Writer, hash string, checksums []*checksum.File
 		if err != nil {
 			return err
 		}
+	}
+	if errs != nil && len(errs) > 0 {
+		_, err := fmt.Fprintf(w, "[Errors]\n")
+		if err != nil {
+			return err
+		}
+	}
+	for i, e := range errs {
+		_, err = fmt.Fprintf(w, "%d=%v", i, e)
 	}
 	return nil
 }

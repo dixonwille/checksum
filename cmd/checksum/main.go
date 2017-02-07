@@ -58,11 +58,7 @@ func getCommand(output, hash *string, recursive *bool, srcs *[]string) func() {
 			cli.Exit(1)
 		}
 		getChannel := getChecksums(hashMethod, *srcs)
-		checksums, ok := channelResponse(getChannel)
-		if !ok {
-			fmt.Println("Could not get the checksum of all the files")
-			cli.Exit(1)
-		}
+		checksums, errs := channelResponse(getChannel) //ignore errs so we can put it in the output
 		var w *bufio.Writer
 		if *output == "" {
 			w = bufio.NewWriter(os.Stdout)
@@ -74,7 +70,7 @@ func getCommand(output, hash *string, recursive *bool, srcs *[]string) func() {
 			}
 			w = bufio.NewWriter(file)
 		}
-		err = iniFormatChecksums(w, *hash, checksums)
+		err = iniFormatChecksums(w, *hash, checksums, cleanErrors(errs))
 		if err != nil {
 			fmt.Println(err)
 			cli.Exit(1)
@@ -105,21 +101,22 @@ func validateSources(recursive bool, srcs []string) error {
 	return nil
 }
 
-func channelResponse(resChan <-chan checksumResponse) ([]*checksum.FileChecksum, bool) {
-	wasErr := false
+//Parse the channel for errors and responses and return the summation of it all
+func channelResponse(resChan <-chan checksumResponse) ([]*checksum.FileChecksum, []error) {
 	var checksums []*checksum.FileChecksum
+	var allErrors []error
 	for response := range resChan {
-		if response.err != nil {
-			wasErr = true
-			fmt.Println(response.err)
+		if response.errs != nil && len(response.errs) > 0 {
+			allErrors = append(allErrors, response.errs...)
 		}
-		if response.checksums != nil {
+		if response.checksums != nil && len(response.checksums) > 0 {
 			checksums = append(checksums, response.checksums...)
 		}
 	}
-	return checksums, !wasErr
+	return checksums, allErrors
 }
 
+//Basically takes a bunch of channels and outputs them to a single channel
 func channelHandler(resChan []<-chan checksumResponse) <-chan checksumResponse {
 	mainChan := make(chan checksumResponse)
 	go func() {
@@ -152,4 +149,14 @@ func channelHandler(resChan []<-chan checksumResponse) <-chan checksumResponse {
 		}
 	}()
 	return mainChan
+}
+
+func cleanErrors(errs []error) []error {
+	var newErrs []error
+	for _, e := range errs {
+		if e != nil {
+			newErrs = append(newErrs, e)
+		}
+	}
+	return newErrs
 }

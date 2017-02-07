@@ -22,21 +22,19 @@ func getChecksum(hash crypto.Hash, src string) <-chan checksumResponse {
 		var checksums []*checksum.FileChecksum
 		if info, err := os.Stat(src); err != nil {
 			csr <- newChecksumResponse(nil, err)
-			return
 		} else if info.IsDir() {
-			css, err := checksum.Directory(src, hash)
-			if err != nil {
-				csr <- newChecksumResponse(nil, err)
-				return
+			css, errs := checksum.Directory(src, hash)
+			if len(errs) > 0 {
+				csr <- newChecksumResponse(nil, errs...)
 			}
 			checksums = append(checksums, css...)
 		} else {
 			cs, err := checksum.File(src, hash)
 			if err != nil {
 				csr <- newChecksumResponse(nil, err)
-				return
+			} else {
+				checksums = append(checksums, cs)
 			}
-			checksums = append(checksums, cs)
 		}
 		csr <- newChecksumResponse(checksums, nil)
 	}()
