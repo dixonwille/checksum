@@ -13,3 +13,17 @@ type FileChecksum struct {
 	FilePath string
 	Checksum []byte
 }
+
+//FileChecksumResponse is a response from this library over the channel.
+type FileChecksumResponse struct {
+	Checksum *FileChecksum
+	Err      error
+}
+
+//NewResponse creates a new response for the channel.
+func NewResponse(checksum *FileChecksum, err error) FileChecksumResponse {
+	return FileChecksumResponse{
+		Checksum: checksum,
+		Err:      err,
+	}
+}

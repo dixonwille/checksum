@@ -3,91 +3,120 @@ package checksum
 import (
 	"bufio"
 	"crypto"
-	"fmt"
 	"io"
 	"os"
-
-	"github.com/stretchr/powerwalk"
 
 	"path/filepath"
 	"sync"
 )
 
-const bufferSize = 4096
+var (
+	//BufferSize is used to buffer the file before hashing.
+	BufferSize = 4096
+	//Limit is the limit of how many open files to process at one time.
+	Limit = 100
+)
 
-//File is used to get the checksum of the file.
-func File(path string, h crypto.Hash) (*FileChecksum, error) {
+type fileParams struct {
+	path string
+	h    crypto.Hash
+}
+
+//File gets the checksum of the file and responds on the channel passed in.
+func File(path string, h crypto.Hash, response chan FileChecksumResponse) {
 	if !h.Available() {
-		return nil, NewError(path, ErrHashBinary, nil)
+		response <- NewResponse(nil, NewError(path, ErrHashBinary, nil))
+		return
 	}
-	hash := h.New()
 	if info, err := os.Stat(path); err != nil {
-		return nil, NewError(path, ErrCannotBeRead, err)
+		response <- NewResponse(nil, NewError(path, ErrCannotBeRead, err))
+		return
 	} else if info.IsDir() {
-		return nil, NewError(path, ErrFileIsDirectory, nil)
+		response <- NewResponse(nil, NewError(path, ErrFileIsDirectory, nil))
+		return
+	} else if !info.Mode().IsRegular() {
+		response <- NewResponse(nil, NewError(path, ErrNotRegular, nil))
+		return
 	}
 
 	file, err := os.Open(path)
 	if err != nil {
-		return nil, NewError(path, ErrFileNotOpen, err)
+		response <- NewResponse(nil, NewError(path, ErrFileNotOpen, err))
+		return
 	}
 	defer file.Close()
-	buf := make([]byte, bufferSize)
+	buf := make([]byte, BufferSize)
 	fileReader := bufio.NewReader(file)
+	hash := h.New()
 	for {
 		if n, err := fileReader.Read(buf); err == nil {
-			nw, err := hash.Write(buf[:n])
-			if err != nil {
-				return nil, NewError(path, ErrWritingHash, err)
+			nw, e := hash.Write(buf[:n])
+			if e != nil {
+				response <- NewResponse(nil, NewError(path, ErrWritingHash, err))
+				return
 			}
 			if nw != n {
-				fmt.Printf("ReadBits: %d\nWriteBits: %d\n", n, nw)
-				return nil, NewError(path, ErrImproperLength, nil)
+				response <- NewResponse(nil, NewError(path, ErrImproperLength, nil))
+				return
 			}
 		} else if err == io.EOF {
 			break
 		} else {
-			return nil, NewError(path, ErrFileReading, err)
+			response <- NewResponse(nil, NewError(path, ErrFileReading, err))
+			return
 		}
 	}
-	return &FileChecksum{
+	response <- NewResponse(&FileChecksum{
 		FilePath: path,
 		Checksum: hash.Sum(nil),
-	}, nil
+	}, nil)
 }
 
-//Directory walks the given directory and returning the checksum of all the files in it.
-func Directory(root string, h crypto.Hash) ([]*FileChecksum, []error) {
-	if _, err := os.Stat(root); err != nil {
-		return nil, []error{NewError(root, ErrCannotBeRead, err)}
+//Directory gets the checksum of all files in the directory and responds on the channel.
+func Directory(root string, h crypto.Hash, response chan FileChecksumResponse) {
+	if !h.Available() {
+		response <- NewResponse(nil, NewError(root, ErrHashBinary, nil))
+		return
 	}
-	var folderSums []*FileChecksum
-	var allErrors []error
-	errLock := new(sync.Mutex)
-	sumLock := new(sync.Mutex)
-	walkErr := powerwalk.Walk(root, func(path string, info os.FileInfo, intErr error) error {
-		if intErr != nil {
-			errLock.Lock()
-			allErrors = append(allErrors, NewError(path, ErrWalking, intErr))
-			errLock.Unlock()
+	if _, err := os.Stat(root); err != nil {
+		response <- NewResponse(nil, NewError(root, ErrCannotBeRead, err))
+		return
+	}
+	wg := new(sync.WaitGroup)
+	files := make(chan fileParams)
+	defer close(files)
+	//These are the workers and are limited to Limit
+	for i := 0; i < Limit; i++ {
+		go func() {
+			for {
+				select {
+				case file, ok := <-files:
+					if !ok {
+						continue
+					}
+					File(file.path, file.h, response)
+					wg.Done()
+				}
+			}
+		}()
+	}
+
+	err := filepath.Walk(root, func(path string, info os.FileInfo, wlkErr error) error {
+		if wlkErr != nil {
+			response <- NewResponse(nil, NewError(path, ErrWalking, wlkErr))
 			return nil
 		}
 		if !info.IsDir() {
-			fileChecksum, fileErr := File(path, h)
-			if fileErr != nil {
-				errLock.Lock()
-				allErrors = append(allErrors, fileErr)
-				errLock.Unlock()
-				return filepath.SkipDir
+			wg.Add(1)
+			files <- fileParams{
+				path: path,
+				h:    h,
 			}
-			sumLock.Lock()
-			folderSums = append(folderSums, fileChecksum)
-			sumLock.Unlock()
 		}
 		return nil
 	})
-	if walkErr != nil {
-		allErrors = append(allErrors, NewError(root, ErrWalking, walkErr))
+	wg.Wait()
+	if err != nil {
+		response <- NewResponse(nil, err)
 	}
-	return folderSums, allErrors
 }

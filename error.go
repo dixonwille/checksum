@@ -27,10 +27,13 @@ var (
 	ErrWritingHash = errors.New("Could not write bytes to the hashubg function")
 	//ErrWalking is returned when there was an issue walking to the specified file or folder.
 	ErrWalking = errors.New("There was a problem walking to this file/folder")
+	//ErrNotRegular is returned when the file is not a regular file.
+	ErrNotRegular = errors.New("The file is not a regular file")
 )
 
-func NewError(path string, err, inner error) *CSError {
-	return &CSError{
+//NewError creates a new CSError.
+func NewError(path string, err, inner error) CSError {
+	return CSError{
 		Path:  path,
 		Err:   err,
 		Inner: inner,
@@ -38,7 +41,7 @@ func NewError(path string, err, inner error) *CSError {
 }
 
 //Error is used to implement the Error interface.
-func (e *CSError) Error() string {
+func (e CSError) Error() string {
 	err := fmt.Sprintf("%s: %v", e.Path, e.Err)
 	if e.Inner != nil {
 		err += fmt.Sprintf(" Inner: %v", e.Inner)
